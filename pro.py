@@ -14,7 +14,7 @@ nltk.download('vader_lexicon')
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from datetime import datetime, timedelta
 from tensorflow.keras.models import load_model
-from testing import (
+from model import (
     AttentionLayer,
     enhance_features,
     ensemble_predict_dynamic,
