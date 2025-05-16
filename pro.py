@@ -21,6 +21,14 @@ class LegacyLSTM(_KerasLSTM):
     def __init__(self, *args, **kwargs):
         kwargs.pop("time_major", None)      # <- the trouble-maker
         super().__init__(*args, **kwargs)
+
+from tensorflow.keras.utils import get_custom_objects
+get_custom_objects().update({
+    "LSTM": LegacyLSTM,
+    "tensorflow.keras.layers.LSTM": LegacyLSTM,
+    "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
+    "legacy_rnn.LSTM": LegacyLSTM,         # used in TF ≥2.15
+})
 from model import (
     AttentionLayer,
     enhance_features,
