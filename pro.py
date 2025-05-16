@@ -15,28 +15,25 @@ from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from datetime import datetime, timedelta
 from tensorflow.keras.models import load_model
 from tensorflow.keras.layers import LSTM as _KerasLSTM
+from tensorflow.keras.layers import LSTM as _KerasLSTM
+from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
+from tensorflow.keras.utils import get_custom_objects
 
+# --- 1. LSTM shim ---------------------------------------------------
 class LegacyLSTM(_KerasLSTM):
-    """Discard the 'time_major' argument stored in older TF-Keras .h5 files."""
+    """
+    Strip the obsolete 'time_major' kwarg that appears in models saved
+    with older TF-Keras versions (pre-2.12).
+    """
     def __init__(self, *args, **kwargs):
-        kwargs.pop("time_major", None)      # <- the trouble-maker
+        kwargs.pop("time_major", None)
         super().__init__(*args, **kwargs)
 
-from tensorflow.keras.utils import get_custom_objects
-get_custom_objects().update({
-    "LSTM": LegacyLSTM,
-    "tensorflow.keras.layers.LSTM": LegacyLSTM,
-    "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
-    "legacy_rnn.LSTM": LegacyLSTM,         # used in TF ≥2.15
-})
-
-# --- add right next to LegacyLSTM in pro.py --------------------------
-from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
-
+# --- 2. Multi-Head Attention shim -----------------------------------
 class LegacyMultiHeadAttention(_KerasMHA):
     """
-    Drop the obsolete 'query_shape', 'key_shape', and 'value_shape'
-    arguments that were stored in models trained with older TF-Keras.
+    Remove the deprecated 'query_shape', 'key_shape', and 'value_shape'
+    kwargs stored by older TF-Keras checkpoints.
     """
     def __init__(self, *args, **kwargs):
         kwargs.pop("query_shape", None)
@@ -44,8 +41,10 @@ class LegacyMultiHeadAttention(_KerasMHA):
         kwargs.pop("value_shape", None)
         super().__init__(*args, **kwargs)
 
+# --- 3. Import your custom AttentionLayer ---------------------------
+#     (defined in model.py alongside the build_* helpers)
 from model import (
-    AttentionLayer,
+    AttentionLayer,                    # <--- the missing class
     enhance_features,
     ensemble_predict_dynamic,
     prepare_sequence_data,
@@ -58,6 +57,26 @@ from model import (
     trade_statistics,
     generate_alerts,
 )
+
+# --- 4. Register all aliases in the global registry -----------------
+get_custom_objects().update({
+    # -- LSTM aliases --
+    "LSTM": LegacyLSTM,
+    "tensorflow.keras.layers.LSTM": LegacyLSTM,
+    "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
+    "legacy_rnn.LSTM": LegacyLSTM,                 # used in TF ≥ 2.15
+
+    # -- Multi-Head Attention aliases --
+    "MultiHeadAttention": LegacyMultiHeadAttention,
+    "tensorflow.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
+    "tensorflow.python.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
+
+    # -- AttentionLayer aliases (fixes the load error) --
+    "AttentionLayer": AttentionLayer,
+    "tensorflow.keras.layers.AttentionLayer": AttentionLayer,
+    "tensorflow.python.keras.layers.AttentionLayer": AttentionLayer,
+})
+
 
 # --- News Sentiment Functions ---
 
