@@ -29,6 +29,21 @@ get_custom_objects().update({
     "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
     "legacy_rnn.LSTM": LegacyLSTM,         # used in TF ≥2.15
 })
+
+# --- add right next to LegacyLSTM in pro.py --------------------------
+from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
+
+class LegacyMultiHeadAttention(_KerasMHA):
+    """
+    Drop the obsolete 'query_shape', 'key_shape', and 'value_shape'
+    arguments that were stored in models trained with older TF-Keras.
+    """
+    def __init__(self, *args, **kwargs):
+        kwargs.pop("query_shape", None)
+        kwargs.pop("key_shape", None)
+        kwargs.pop("value_shape", None)
+        super().__init__(*args, **kwargs)
+
 from model import (
     AttentionLayer,
     enhance_features,
@@ -86,9 +101,11 @@ def load_all_models(ticker):
     """Load all trained models and scaler for a specific ticker."""
     try:
         custom_objs = {
-            "AttentionLayer": AttentionLayer,   # your custom layer
-            "LSTM": LegacyLSTM                 # 👈 NEW – use wrapper
+            "AttentionLayer": AttentionLayer,
+            "LSTM": LegacyLSTM,
+            "MultiHeadAttention": LegacyMultiHeadAttention   # 👈 NEW
         }
+
         models = {
             'cnn_lstm': load_model(f"model/{ticker}_cnn_lstm.h5",
                                    custom_objects=custom_objs),
