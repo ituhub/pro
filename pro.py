@@ -14,6 +14,13 @@ nltk.download('vader_lexicon')
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from datetime import datetime, timedelta
 from tensorflow.keras.models import load_model
+from tensorflow.keras.layers import LSTM as _KerasLSTM
+
+class LegacyLSTM(_KerasLSTM):
+    """Discard the 'time_major' argument stored in older TF-Keras .h5 files."""
+    def __init__(self, *args, **kwargs):
+        kwargs.pop("time_major", None)      # <- the trouble-maker
+        super().__init__(*args, **kwargs)
 from model import (
     AttentionLayer,
     enhance_features,
@@ -66,23 +73,32 @@ st.set_page_config(page_title="📈 AI Trading Predictor", layout="wide")
 st.title("📊 AI-Powered Ensemble Price Predictor")
 st.markdown("Uses trained models (CNN-LSTM, Transformer, TCN, Informer) for prediction.")
 
-# --- Load Models ---
+# --- Load Models -----------------------------------------------------
 def load_all_models(ticker):
-    """Load all trained models and scaler for a specific ticker"""
+    """Load all trained models and scaler for a specific ticker."""
     try:
-        # Load models with custom objects where needed
-        models = {
-            'cnn_lstm': load_model(f"model/{ticker}_cnn_lstm.h5", custom_objects={"AttentionLayer": AttentionLayer}),
-            'transformer': load_model(f"model/{ticker}_transformer.h5"),
-            'tcn': load_model(f"model/{ticker}_tcn.h5"),
-            'informer': load_model(f"model/{ticker}_informer.h5")
+        custom_objs = {
+            "AttentionLayer": AttentionLayer,   # your custom layer
+            "LSTM": LegacyLSTM                 # 👈 NEW – use wrapper
         }
-        scaler = joblib.load(f"model/{ticker}_scaler.pkl")
-        feature_cols = joblib.load(f"model/{ticker}_features.pkl")
+        models = {
+            'cnn_lstm': load_model(f"model/{ticker}_cnn_lstm.h5",
+                                   custom_objects=custom_objs),
+            'transformer': load_model(f"model/{ticker}_transformer.h5",
+                                      custom_objects=custom_objs),
+            'tcn': load_model(f"model/{ticker}_tcn.h5",
+                              custom_objects=custom_objs),
+            'informer': load_model(f"model/{ticker}_informer.h5",
+                                   custom_objects=custom_objs)
+        }
+        scaler        = joblib.load(f"model/{ticker}_scaler.pkl")
+        feature_cols  = joblib.load(f"model/{ticker}_features.pkl")
         return models, scaler, feature_cols
     except Exception as e:
         st.error(f"⚠️ Model loading failed for {ticker}: {e}")
         return None, None, None
+# --------------------------------------------------------------------
+
 
 # --- Fetch Live Data ---
 def fetch_historical_data(symbol, interval='15min'):
