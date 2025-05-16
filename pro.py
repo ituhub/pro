@@ -15,6 +15,7 @@ import tensorflow as tf
 from tensorflow.keras.layers import LSTM as _KerasLSTM
 from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
 from tensorflow.keras.utils import get_custom_objects
+from pathlib import Path
 
 # ── 1. Legacy LSTM shim ─────────────────────────────────────────────
 class LegacyLSTM(_KerasLSTM):
@@ -98,11 +99,6 @@ CUSTOM_OBJECTS: dict[str, object] = {
     "layers.AttentionLayer": AttentionLayer,
 }
 
-# ---------------------------------------------------------------------
-# 5.  Unified, cached model loader  ⚡
-# ---------------------------------------------------------------------
-from pathlib import Path       # make sure this is near your other imports
-
 @st.cache_resource(show_spinner=False)
 def load_all_models(ticker: str):
     """
@@ -127,7 +123,7 @@ def load_all_models(ticker: str):
     # ── make every custom layer visible while deserialising ──────────
     with tf.keras.utils.custom_object_scope(CUSTOM_OBJECTS):
         models = {
-            name: load_model(path, compile=False)
+            name: load_model(path, compile=False, custom_objects=CUSTOM_OBJECTS)
             for name, path in h5_paths.items()
         }
 
@@ -135,7 +131,6 @@ def load_all_models(ticker: str):
     features = joblib.load(base / f"{ticker}_features.pkl")
 
     return models, scaler, features
-
 
 # --- Fetch Live Data ---
 def fetch_historical_data(symbol, interval='15min'):
