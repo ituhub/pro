@@ -1,6 +1,3 @@
-# Part 1: Imports, API setup, and core functions
-
-# 1. IMPORTS
 import os
 import json
 import joblib
@@ -79,74 +76,66 @@ get_custom_objects().update({
     "CustomAttentionLayer": AttentionLayer,             # stray alias, harmless
 })
 
-# --- News Sentiment Functions ---
+# ---------------------------------------------------------------------
+# 4 b.  One central mapping that ALL calls to `load_model` will share
+# ---------------------------------------------------------------------
+CUSTOM_OBJECTS: dict[str, object] = {
+    # project-specific layers
+    "AttentionLayer": AttentionLayer,
+    "LegacyLSTM": LegacyLSTM,
+    "LegacyMultiHeadAttention": LegacyMultiHeadAttention,
 
-def fetch_news(ticker):
-    """Fetch latest news articles using NewsAPI."""
-    news_api_key = os.getenv("NEWS_API_KEY_NEWSAPI")
-    if not news_api_key:
-        st.error("API key for NewsAPI.org not set.")
-        return []
-    
-    url = f'https://newsapi.org/v2/everything?q={ticker}&sortBy=publishedAt&language=en&apiKey={news_api_key}'
-    try:
-        r = requests.get(url)
-        r.raise_for_status()
-        articles = r.json().get('articles', [])
-        return articles
-    except Exception as e:
-        st.error(f"⚠️ Could not fetch news: {e}")
-        return []
+    # historical aliases that may live inside old .h5 files
+    "LSTM": LegacyLSTM,
+    "tensorflow.keras.layers.LSTM": LegacyLSTM,
+    "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
 
-def compute_sentiment_score(articles):
-    """Compute average sentiment score from news articles."""
-    sia = SentimentIntensityAnalyzer()
-    sentiment_scores = []
-
-    for article in articles:
-        text = ' '.join(filter(None, [article.get('title', ''), article.get('description', ''), article.get('content', '')]))
-        if text:
-            score = sia.polarity_scores(text)['compound']
-            sentiment_scores.append(score)
-
-    return np.mean(sentiment_scores) if sentiment_scores else 0.0
-
-# --- Streamlit Setup ---
-st.set_page_config(page_title="📈 AI Trading Predictor", layout="wide")
-st.title("📊 AI-Powered Ensemble Price Predictor")
-st.markdown("Uses trained models (CNN-LSTM, Transformer, TCN, Informer) for prediction.")
-
-# --- Load Models -----------------------------------------------------
-# --- Register legacy shims once ---------------------------------------
-get_custom_objects().update({
     "MultiHeadAttention": LegacyMultiHeadAttention,
     "tensorflow.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
     "tensorflow.python.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
-})
+
+    "Custom>AttentionLayer": AttentionLayer,
+    "layers.AttentionLayer": AttentionLayer,
+}
+
+# ---------------------------------------------------------------------
+# 5.  Unified, cached model loader  ⚡
+# ---------------------------------------------------------------------
+from pathlib import Path       # make sure this is near your other imports
 
 @st.cache_resource(show_spinner=False)
-def load_all_models(ticker):
-    """Load trained models and the associated scaler/feature list."""
-    try:
-        paths = {
-            'cnn_lstm':   f"model/{ticker}_cnn_lstm.h5",
-            'transformer': f"model/{ticker}_transformer.h5",
-            'tcn':        f"model/{ticker}_tcn.h5",
-            'informer':   f"model/{ticker}_informer.h5",
+def load_all_models(ticker: str):
+    """
+    Load the four neural nets trained on `ticker` plus their scaler and
+    feature list, with every custom layer properly resolved.
+
+    Returns
+    -------
+    models   : dict[str, tf.keras.Model]
+    scaler   : sklearn (or joblib) preprocessing object
+    features : list[str]
+    """
+    base = Path("model")  # change if your folder is named differently
+
+    h5_paths = {
+        "cnn_lstm":   base / f"{ticker}_cnn_lstm.h5",
+        "transformer":base / f"{ticker}_transformer.h5",
+        "tcn":        base / f"{ticker}_tcn.h5",
+        "informer":   base / f"{ticker}_informer.h5",
+    }
+
+    # ── make every custom layer visible while deserialising ──────────
+    with tf.keras.utils.custom_object_scope(CUSTOM_OBJECTS):
+        models = {
+            name: load_model(path, compile=False)
+            for name, path in h5_paths.items()
         }
 
-        models = {name: load_model(p, compile=False) for name, p in paths.items()}
+    scaler   = joblib.load(base / f"{ticker}_scaler.gz")
+    features = joblib.load(base / f"{ticker}_features.pkl")
 
-        scaler        = joblib.load(f"model/{ticker}_scaler.pkl")
-        feature_cols  = joblib.load(f"model/{ticker}_features.pkl")
-        return models, scaler, feature_cols
+    return models, scaler, features
 
-    except Exception as e:
-        st.error(f"⚠️ Model loading failed for {ticker}: {e}")
-        st.exception(e)  # optional, for dev only
-        return None, None, None
-
-# --------------------------------------------------------------------
 
 # --- Fetch Live Data ---
 def fetch_historical_data(symbol, interval='15min'):
