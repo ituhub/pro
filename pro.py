@@ -14,37 +14,30 @@ nltk.download('vader_lexicon')
 from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from datetime import datetime, timedelta
 from tensorflow.keras.models import load_model
-from tensorflow.keras.layers import LSTM as _KerasLSTM
+import tensorflow as tf
 from tensorflow.keras.layers import LSTM as _KerasLSTM
 from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
 from tensorflow.keras.utils import get_custom_objects
 
-# --- 1. LSTM shim ---------------------------------------------------
+# ── 1. Legacy LSTM shim ─────────────────────────────────────────────
 class LegacyLSTM(_KerasLSTM):
-    """
-    Strip the obsolete 'time_major' kwarg that appears in models saved
-    with older TF-Keras versions (pre-2.12).
-    """
+    """Ignore the deprecated 'time_major' kwarg stored in old checkpoints."""
     def __init__(self, *args, **kwargs):
         kwargs.pop("time_major", None)
         super().__init__(*args, **kwargs)
 
-# --- 2. Multi-Head Attention shim -----------------------------------
+# ── 2. Legacy Multi-Head Attention shim ─────────────────────────────
 class LegacyMultiHeadAttention(_KerasMHA):
-    """
-    Remove the deprecated 'query_shape', 'key_shape', and 'value_shape'
-    kwargs stored by older TF-Keras checkpoints.
-    """
+    """Ignore obsolete shape kwargs saved by older TF-Keras versions."""
     def __init__(self, *args, **kwargs):
         kwargs.pop("query_shape", None)
         kwargs.pop("key_shape", None)
         kwargs.pop("value_shape", None)
         super().__init__(*args, **kwargs)
 
-# --- 3. Import your custom AttentionLayer ---------------------------
-#     (defined in model.py alongside the build_* helpers)
+# ── 3. Import your project-specific layer + helpers ─────────────────
 from model import (
-    AttentionLayer,                    # <--- the missing class
+    AttentionLayer,                 # ← the class that was “unknown”
     enhance_features,
     ensemble_predict_dynamic,
     prepare_sequence_data,
@@ -58,25 +51,33 @@ from model import (
     generate_alerts,
 )
 
-# --- 4. Register all aliases in the global registry -----------------
+# Optional but future-proof: self-register so new saves carry metadata
+@tf.keras.utils.register_keras_serializable(package="Custom")
+class AttentionLayer(AttentionLayer):     # type: ignore
+    """Thin wrapper so future .keras/.h5 files store 'Custom>AttentionLayer'."""
+    pass
+
+# ── 4. Register **every** alias Keras might look for ────────────────
 get_custom_objects().update({
-    # -- LSTM aliases --
+    # LSTM variants
     "LSTM": LegacyLSTM,
     "tensorflow.keras.layers.LSTM": LegacyLSTM,
     "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
-    "legacy_rnn.LSTM": LegacyLSTM,                 # used in TF ≥ 2.15
+    "legacy_rnn.LSTM": LegacyLSTM,                      # TF ≥ 2.15
 
-    # -- Multi-Head Attention aliases --
+    # Multi-Head Attention variants
     "MultiHeadAttention": LegacyMultiHeadAttention,
     "tensorflow.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
     "tensorflow.python.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
 
-    # -- AttentionLayer aliases (fixes the load error) --
+    # AttentionLayer variants (add as many as needed)
     "AttentionLayer": AttentionLayer,
     "tensorflow.keras.layers.AttentionLayer": AttentionLayer,
     "tensorflow.python.keras.layers.AttentionLayer": AttentionLayer,
+    "layers.AttentionLayer": AttentionLayer,            # common in 2.x
+    "Custom>AttentionLayer": AttentionLayer,            # if saved w/ @register
+    "CustomAttentionLayer": AttentionLayer,             # stray alias, harmless
 })
-
 
 # --- News Sentiment Functions ---
 
