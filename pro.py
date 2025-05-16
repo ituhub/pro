@@ -99,6 +99,7 @@ CUSTOM_OBJECTS: dict[str, object] = {
     "layers.AttentionLayer": AttentionLayer,
 }
 
+# ── 5. Define the `load_all_models` function ────────────────────────
 @st.cache_resource(show_spinner=False)
 def load_all_models(ticker: str):
     """
@@ -164,6 +165,32 @@ def fetch_historical_data(symbol, interval='15min'):
     except Exception as e:
         st.error(f"⚠️ Could not fetch data for {symbol}: {e}")
         return pd.DataFrame()
+
+# --- Fetch News ---
+def fetch_news(symbol):
+    """Fetch news articles related to the given symbol."""
+    key = os.getenv("NEWS_API_KEY")
+    if not key:
+        st.error("⚠️ API key for News API is not set. Please set the 'NEWS_API_KEY' environment variable.")
+        return []
+    url = f'https://newsapi.org/v2/everything?q={symbol}&apiKey={key}'
+
+    try:
+        r = requests.get(url)
+        r.raise_for_status()
+        data = r.json()
+        articles = [article['description'] for article in data.get('articles', [])]
+        return articles
+    except Exception as e:
+        st.error(f"⚠️ Could not fetch news for {symbol}: {e}")
+        return []
+
+# --- Compute Sentiment Score ---
+def compute_sentiment_score(articles):
+    """Compute the average sentiment score from a list of articles."""
+    sia = SentimentIntensityAnalyzer()
+    scores = [sia.polarity_scores(article)['compound'] for article in articles]
+    return np.mean(scores) if scores else 0.0
 
 # --- Prediction Function ---
 def predict_price(df, ticker, sl_percent, tp_percent, multi_steps=0):
@@ -404,7 +431,5 @@ if tickers:
 
         pred = predict_price(df, ticker, sl_percent, tp_percent, multi_steps=20)
         display_prediction_tables(ticker, pred, df)
-
-
 else:
     st.info("👈 Please select at least one ticker from the sidebar.")
