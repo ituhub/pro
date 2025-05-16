@@ -7,8 +7,6 @@ import pandas as pd
 import numpy as np
 import nltk
 import plotly.graph_objects as go
-nltk.download('vader_lexicon')
-from nltk.sentiment.vader import SentimentIntensityAnalyzer
 from datetime import datetime, timedelta
 from tensorflow.keras.models import load_model
 import tensorflow as tf
@@ -16,6 +14,9 @@ from tensorflow.keras.layers import LSTM as _KerasLSTM
 from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
 from tensorflow.keras.utils import get_custom_objects
 from pathlib import Path
+
+# Download VADER lexicon for sentiment analysis
+nltk.download('vader_lexicon')
 
 # ── 1. Legacy LSTM shim ─────────────────────────────────────────────
 class LegacyLSTM(_KerasLSTM):
