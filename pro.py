@@ -97,33 +97,36 @@ st.title("📊 AI-Powered Ensemble Price Predictor")
 st.markdown("Uses trained models (CNN-LSTM, Transformer, TCN, Informer) for prediction.")
 
 # --- Load Models -----------------------------------------------------
+# --- Register legacy shims once ---------------------------------------
+get_custom_objects().update({
+    "MultiHeadAttention": LegacyMultiHeadAttention,
+    "tensorflow.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
+    "tensorflow.python.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
+})
+
+@st.cache_resource(show_spinner=False)
 def load_all_models(ticker):
-    """Load all trained models and scaler for a specific ticker."""
+    """Load trained models and the associated scaler/feature list."""
     try:
-        custom_objs = {
-            "AttentionLayer": AttentionLayer,
-            "LSTM": LegacyLSTM,
-            "MultiHeadAttention": LegacyMultiHeadAttention   # 👈 NEW
+        paths = {
+            'cnn_lstm':   f"model/{ticker}_cnn_lstm.h5",
+            'transformer': f"model/{ticker}_transformer.h5",
+            'tcn':        f"model/{ticker}_tcn.h5",
+            'informer':   f"model/{ticker}_informer.h5",
         }
 
-        models = {
-            'cnn_lstm': load_model(f"model/{ticker}_cnn_lstm.h5",
-                                   custom_objects=custom_objs),
-            'transformer': load_model(f"model/{ticker}_transformer.h5",
-                                      custom_objects=custom_objs),
-            'tcn': load_model(f"model/{ticker}_tcn.h5",
-                              custom_objects=custom_objs),
-            'informer': load_model(f"model/{ticker}_informer.h5",
-                                   custom_objects=custom_objs)
-        }
+        models = {name: load_model(p, compile=False) for name, p in paths.items()}
+
         scaler        = joblib.load(f"model/{ticker}_scaler.pkl")
         feature_cols  = joblib.load(f"model/{ticker}_features.pkl")
         return models, scaler, feature_cols
+
     except Exception as e:
         st.error(f"⚠️ Model loading failed for {ticker}: {e}")
+        st.exception(e)  # optional, for dev only
         return None, None, None
-# --------------------------------------------------------------------
 
+# --------------------------------------------------------------------
 
 # --- Fetch Live Data ---
 def fetch_historical_data(symbol, interval='15min'):
