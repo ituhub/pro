@@ -122,6 +122,10 @@ def load_all_models(ticker: str):
         "informer":   base / f"{ticker}_informer.h5",
     }
 
+    # Debugging: Print paths and custom objects
+    st.write(f"Paths to model files: {h5_paths}")
+    st.write(f"Custom objects: {CUSTOM_OBJECTS}")
+
     # ── make every custom layer visible while deserialising ──────────
     with tf.keras.utils.custom_object_scope(CUSTOM_OBJECTS):
         models = {
