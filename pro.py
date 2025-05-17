@@ -55,7 +55,7 @@ from model import (
 )
 
 # Ensure that AttentionLayer is registered
-@tf.keras.utils.register_keras_serializable()
+@tf.keras.utils.register_keras_serializable(package="Custom", name="AttentionLayer")
 class AttentionLayer(Layer):
     def __init__(self, units=128, **kwargs):
         super(AttentionLayer, self).__init__(**kwargs)
@@ -163,6 +163,50 @@ def compute_sentiment_score(articles):
     scores = [sia.polarity_scores(article)['compound'] for article in articles if article]
     return np.mean(scores) if scores else 0.0
 
+# --- Load Models Function ---
+@st.cache_resource(show_spinner=False)
+def load_all_models(ticker: str):
+    base = Path("model")
+
+    h5_paths = {
+        "cnn_lstm":   base / f"{ticker}_cnn_lstm.h5",
+        "transformer":base / f"{ticker}_transformer.h5",
+        "tcn":        base / f"{ticker}_tcn.h5",
+        "informer":   base / f"{ticker}_informer.h5",
+    }
+
+    # Debugging: Print paths and custom objects
+    st.write(f"Paths to model files: {h5_paths}")
+    st.write(f"Custom objects: {CUSTOM_OBJECTS}")
+
+    models = {}
+    for name, path in h5_paths.items():
+        if not path.exists():
+            st.error(f"Model file not found: {path}")
+            continue
+        try:
+            with tf.keras.utils.custom_object_scope(CUSTOM_OBJECTS):
+                models[name] = load_model(path, compile=False)
+        except Exception as e:
+            st.error(f"Error loading model '{name}' from {path}: {e}")
+            # For debugging, print the traceback
+            import traceback
+            st.text(traceback.format_exc())
+            continue
+
+    # Adjusted scaler and features paths based on your filenames
+    scaler_path = base / "scaler.pkl"  # Adjusted filename
+    features_path = base / "features.pkl"  # Adjusted filename
+
+    if not scaler_path.exists() or not features_path.exists():
+        st.error(f"Scaler or features file not found for {ticker}")
+        return None, None, None
+
+    scaler = joblib.load(scaler_path)
+    features = joblib.load(features_path)
+
+    return models, scaler, features
+
 # --- Prediction Function ---
 def predict_price(df, ticker, sl_percent, tp_percent, multi_steps=0):
     """Generate price prediction and optional multi-step forecast."""
@@ -232,6 +276,9 @@ def predict_price(df, ticker, sl_percent, tp_percent, multi_steps=0):
 
     except Exception as e:
         st.error(f"❌ Error in prediction: {e}")
+        # For debugging, print the traceback
+        import traceback
+        st.text(traceback.format_exc())
         return None
 
 def multi_step_forecast(models, X_input, scaler, feature_cols, steps=10):
@@ -391,51 +438,6 @@ tickers = st.sidebar.multiselect(
 
 sl_percent = st.sidebar.slider("Stop Loss %", 0.5, 5.0, 1.0)
 tp_percent = st.sidebar.slider("Take Profit %", 1.0, 10.0, 2.0)
-
-# --- Load Models Function ---
-# --- Load Models Function ---
-@st.cache_resource(show_spinner=False)
-def load_all_models(ticker: str):
-    base = Path("model")
-
-    h5_paths = {
-        "cnn_lstm":   base / f"{ticker}_cnn_lstm.h5",
-        "transformer":base / f"{ticker}_transformer.h5",
-        "tcn":        base / f"{ticker}_tcn.h5",
-        "informer":   base / f"{ticker}_informer.h5",
-    }
-
-    # Debugging: Print paths and custom objects
-    st.write(f"Paths to model files: {h5_paths}")
-    st.write(f"Custom objects: {CUSTOM_OBJECTS}")
-
-    models = {}
-    for name, path in h5_paths.items():
-        if not path.exists():
-            st.error(f"Model file not found: {path}")
-            continue
-        try:
-            with tf.keras.utils.custom_object_scope(CUSTOM_OBJECTS):
-                models[name] = load_model(path, compile=False)
-        except Exception as e:
-            st.error(f"Error loading model '{name}' from {path}: {e}")
-            # For debugging, print the traceback
-            import traceback
-            st.text(traceback.format_exc())
-            continue
-
-    # Adjusted scaler and features paths based on your filenames
-    scaler_path = base / "scaler.pkl"  # Adjusted filename
-    features_path = base / "features.pkl"  # Adjusted filename
-
-    if not scaler_path.exists() or not features_path.exists():
-        st.error(f"Scaler or features file not found for {ticker}")
-        return None, None, None
-
-    scaler = joblib.load(scaler_path)
-    features = joblib.load(features_path)
-
-    return models, scaler, features
 
 # --- Main Execution ---
 if tickers:
