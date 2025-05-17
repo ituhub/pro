@@ -1,3 +1,5 @@
+# pro.py
+
 import os
 import json
 import joblib
@@ -15,6 +17,7 @@ from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.utils import get_custom_objects
 from pathlib import Path
+from nltk.sentiment import SentimentIntensityAnalyzer
 
 # Download VADER lexicon for sentiment analysis
 nltk.download('vader_lexicon')
@@ -37,7 +40,7 @@ class LegacyMultiHeadAttention(_KerasMHA):
 
 # ── 3. Import your project-specific layer + helpers ─────────────────
 from model import (
-    AttentionLayer,                 # ← the class that was “unknown”
+    AttentionLayer,                 # Your custom AttentionLayer
     enhance_features,
     ensemble_predict_dynamic,
     prepare_sequence_data,
@@ -51,7 +54,8 @@ from model import (
     generate_alerts,
 )
 
-@tf.keras.utils.register_keras_serializable(package="Custom")
+# Ensure that AttentionLayer is registered
+@tf.keras.utils.register_keras_serializable()
 class AttentionLayer(Layer):
     def __init__(self, units=128, **kwargs):
         super(AttentionLayer, self).__init__(**kwargs)
@@ -75,87 +79,19 @@ class AttentionLayer(Layer):
         config.update({"units": self.units})
         return config
 
-# ── 4. Register **every** alias Keras might look for ────────────────
-get_custom_objects().update({
-    # LSTM variants
-    "LSTM": LegacyLSTM,
-    "tensorflow.keras.layers.LSTM": LegacyLSTM,
-    "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
-    "legacy_rnn.LSTM": LegacyLSTM,                      # TF ≥ 2.15
-
-    # Multi-Head Attention variants
-    "MultiHeadAttention": LegacyMultiHeadAttention,
-    "tensorflow.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
-    "tensorflow.python.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
-
-    # AttentionLayer variants (add as many as needed)
-    "AttentionLayer": AttentionLayer,
-    "tensorflow.keras.layers.AttentionLayer": AttentionLayer,
-    "tensorflow.python.keras.layers.AttentionLayer": AttentionLayer,
-    "layers.AttentionLayer": AttentionLayer,            # common in 2.x
-    "Custom>AttentionLayer": AttentionLayer,            # if saved w/ @register
-    "CustomAttentionLayer": AttentionLayer,             # stray alias, harmless
-})
-
-# ---------------------------------------------------------------------
-# 4 b.  One central mapping that ALL calls to `load_model` will share
-# ---------------------------------------------------------------------
-CUSTOM_OBJECTS: dict[str, object] = {
-    # project-specific layers
+# ── 4. Register custom objects ──────────────────────────────────────
+CUSTOM_OBJECTS = {
+    # Custom layers
     "AttentionLayer": AttentionLayer,
     "LegacyLSTM": LegacyLSTM,
     "LegacyMultiHeadAttention": LegacyMultiHeadAttention,
-
-    # historical aliases that may live inside old .h5 files
+    # Possible aliases
     "LSTM": LegacyLSTM,
-    "tensorflow.keras.layers.LSTM": LegacyLSTM,
-    "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
-
     "MultiHeadAttention": LegacyMultiHeadAttention,
-    "tensorflow.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
-    "tensorflow.python.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
-
-    "Custom>AttentionLayer": AttentionLayer,
-    "layers.AttentionLayer": AttentionLayer,
 }
 
-# ── 5. Define the `load_all_models` function ────────────────────────
-@st.cache_resource(show_spinner=False)
-def load_all_models(ticker: str):
-    """
-    Load the four neural nets trained on `ticker` plus their scaler and
-    feature list, with every custom layer properly resolved.
-
-    Returns
-    -------
-    models   : dict[str, tf.keras.Model]
-    scaler   : sklearn (or joblib) preprocessing object
-    features : list[str]
-    """
-    base = Path("model")  # change if your folder is named differently
-
-    h5_paths = {
-        "cnn_lstm":   base / f"{ticker}_cnn_lstm.h5",
-        "transformer":base / f"{ticker}_transformer.h5",
-        "tcn":        base / f"{ticker}_tcn.h5",
-        "informer":   base / f"{ticker}_informer.h5",
-    }
-
-    # Debugging: Print paths and custom objects
-    st.write(f"Paths to model files: {h5_paths}")
-    st.write(f"Custom objects: {CUSTOM_OBJECTS}")
-
-    # ── make every custom layer visible while deserialising ──────────
-    with tf.keras.utils.custom_object_scope(CUSTOM_OBJECTS):
-        models = {
-            name: load_model(path, compile=False, custom_objects=CUSTOM_OBJECTS)
-            for name, path in h5_paths.items()
-        }
-
-    scaler   = joblib.load(base / f"{ticker}_scaler.gz")
-    features = joblib.load(base / f"{ticker}_features.pkl")
-
-    return models, scaler, features
+# Add custom objects to Keras custom objects
+get_custom_objects().update(CUSTOM_OBJECTS)
 
 # --- Fetch Live Data ---
 def fetch_historical_data(symbol, interval='15min'):
@@ -165,7 +101,6 @@ def fetch_historical_data(symbol, interval='15min'):
         st.error("⚠️ API key for Financial Modeling Prep is not set. Please set the 'FMP_API_KEY' environment variable.")
         return pd.DataFrame()
     url = f'https://financialmodelingprep.com/api/v3/historical-chart/{interval}/{symbol}?apikey={key}'
-
     try:
         r = requests.get(url)
         r.raise_for_status()
@@ -213,7 +148,7 @@ def fetch_news(symbol):
 def compute_sentiment_score(articles):
     """Compute the average sentiment score from a list of articles."""
     sia = SentimentIntensityAnalyzer()
-    scores = [sia.polarity_scores(article)['compound'] for article in articles]
+    scores = [sia.polarity_scores(article)['compound'] for article in articles if article]
     return np.mean(scores) if scores else 0.0
 
 # --- Prediction Function ---
@@ -444,6 +379,55 @@ tickers = st.sidebar.multiselect(
 
 sl_percent = st.sidebar.slider("Stop Loss %", 0.5, 5.0, 1.0)
 tp_percent = st.sidebar.slider("Take Profit %", 1.0, 10.0, 2.0)
+
+# --- Load Models Function ---
+@st.cache_resource(show_spinner=False)
+def load_all_models(ticker: str):
+    """
+    Load the four neural nets trained on `ticker` plus their scaler and
+    feature list, with every custom layer properly resolved.
+
+    Returns
+    -------
+    models   : dict[str, tf.keras.Model]
+    scaler   : sklearn (or joblib) preprocessing object
+    features : list[str]
+    """
+    base = Path("model")
+
+    h5_paths = {
+        "cnn_lstm":   base / f"{ticker}_cnn_lstm.h5",
+        "transformer":base / f"{ticker}_transformer.h5",
+        "tcn":        base / f"{ticker}_tcn.h5",
+        "informer":   base / f"{ticker}_informer.h5",
+    }
+
+    # Debugging: Print paths and custom objects
+    st.write(f"Paths to model files: {h5_paths}")
+    st.write(f"Custom objects: {CUSTOM_OBJECTS}")
+
+    models = {}
+    for name, path in h5_paths.items():
+        if not path.exists():
+            st.error(f"Model file not found: {path}")
+            continue
+        try:
+            models[name] = load_model(path, compile=False, custom_objects=CUSTOM_OBJECTS)
+        except Exception as e:
+            st.error(f"Error loading model '{name}' from {path}: {e}")
+            continue
+
+    scaler_path = base / f"{ticker}_scaler.gz"
+    features_path = base / f"{ticker}_features.pkl"
+
+    if not scaler_path.exists() or not features_path.exists():
+        st.error(f"Scaler or features file not found for {ticker}")
+        return None, None, None
+
+    scaler = joblib.load(scaler_path)
+    features = joblib.load(features_path)
+
+    return models, scaler, features
 
 # --- Main Execution ---
 if tickers:
