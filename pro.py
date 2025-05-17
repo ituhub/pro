@@ -85,12 +85,24 @@ CUSTOM_OBJECTS = {
     "AttentionLayer": AttentionLayer,
     "LegacyLSTM": LegacyLSTM,
     "LegacyMultiHeadAttention": LegacyMultiHeadAttention,
-    # Possible aliases
+    # Possible aliases for LSTM
     "LSTM": LegacyLSTM,
+    "tensorflow.keras.layers.LSTM": LegacyLSTM,
+    "tensorflow.python.keras.layers.LSTM": LegacyLSTM,
+    "legacy_rnn.LSTM": LegacyLSTM,
+    # Possible aliases for MultiHeadAttention
     "MultiHeadAttention": LegacyMultiHeadAttention,
+    "tensorflow.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
+    "tensorflow.python.keras.layers.MultiHeadAttention": LegacyMultiHeadAttention,
+    # Possible aliases for AttentionLayer
+    "Custom>AttentionLayer": AttentionLayer,
+    "layers.AttentionLayer": AttentionLayer,
+    "tensorflow.keras.layers.AttentionLayer": AttentionLayer,
+    "tensorflow.python.keras.layers.AttentionLayer": AttentionLayer,
+    "CustomAttentionLayer": AttentionLayer,
 }
 
-# Add custom objects to Keras custom objects
+# Update Keras custom objects
 get_custom_objects().update(CUSTOM_OBJECTS)
 
 # --- Fetch Live Data ---
@@ -381,18 +393,9 @@ sl_percent = st.sidebar.slider("Stop Loss %", 0.5, 5.0, 1.0)
 tp_percent = st.sidebar.slider("Take Profit %", 1.0, 10.0, 2.0)
 
 # --- Load Models Function ---
+# --- Load Models Function ---
 @st.cache_resource(show_spinner=False)
 def load_all_models(ticker: str):
-    """
-    Load the four neural nets trained on `ticker` plus their scaler and
-    feature list, with every custom layer properly resolved.
-
-    Returns
-    -------
-    models   : dict[str, tf.keras.Model]
-    scaler   : sklearn (or joblib) preprocessing object
-    features : list[str]
-    """
     base = Path("model")
 
     h5_paths = {
@@ -412,13 +415,18 @@ def load_all_models(ticker: str):
             st.error(f"Model file not found: {path}")
             continue
         try:
-            models[name] = load_model(path, compile=False, custom_objects=CUSTOM_OBJECTS)
+            with tf.keras.utils.custom_object_scope(CUSTOM_OBJECTS):
+                models[name] = load_model(path, compile=False)
         except Exception as e:
             st.error(f"Error loading model '{name}' from {path}: {e}")
+            # For debugging, print the traceback
+            import traceback
+            st.text(traceback.format_exc())
             continue
 
-    scaler_path = base / f"{ticker}_scaler.gz"
-    features_path = base / f"{ticker}_features.pkl"
+    # Adjusted scaler and features paths based on your filenames
+    scaler_path = base / "scaler.pkl"  # Adjusted filename
+    features_path = base / "features.pkl"  # Adjusted filename
 
     if not scaler_path.exists() or not features_path.exists():
         st.error(f"Scaler or features file not found for {ticker}")
