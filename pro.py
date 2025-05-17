@@ -12,6 +12,7 @@ from tensorflow.keras.models import load_model
 import tensorflow as tf
 from tensorflow.keras.layers import LSTM as _KerasLSTM
 from tensorflow.keras.layers import MultiHeadAttention as _KerasMHA
+from tensorflow.keras.layers import Layer
 from tensorflow.keras.utils import get_custom_objects
 from pathlib import Path
 
@@ -50,11 +51,29 @@ from model import (
     generate_alerts,
 )
 
-# Optional but future-proof: self-register so new saves carry metadata
 @tf.keras.utils.register_keras_serializable(package="Custom")
-class AttentionLayer(AttentionLayer):     # type: ignore
-    """Thin wrapper so future .keras/.h5 files store 'Custom>AttentionLayer'."""
-    pass
+class AttentionLayer(Layer):
+    def __init__(self, units=128, **kwargs):
+        super(AttentionLayer, self).__init__(**kwargs)
+        self.units = units
+        self.query_dense = tf.keras.layers.Dense(units, activation="relu")
+        self.key_dense = tf.keras.layers.Dense(units, activation="relu")
+        self.value_dense = tf.keras.layers.Dense(units, activation="relu")
+
+    def call(self, inputs):
+        query = self.query_dense(inputs)
+        key = self.key_dense(inputs)
+        value = self.value_dense(inputs)
+        attention_weights = tf.nn.softmax(
+            tf.matmul(query, key, transpose_b=True), axis=-1
+        )
+        weighted_sum = tf.matmul(attention_weights, value)
+        return weighted_sum
+
+    def get_config(self):
+        config = super(AttentionLayer, self).get_config()
+        config.update({"units": self.units})
+        return config
 
 # ── 4. Register **every** alias Keras might look for ────────────────
 get_custom_objects().update({
