@@ -163,6 +163,7 @@ def predict_price(df, ticker, sl_percent, tp_percent, multi_steps=0, device="cpu
             "stop_loss": sl,
             "take_profit": tp,
             "forecast_prices": forecast_prices,
+            "sentiment_score": 0.0,  # Add this line
         }
 
     except Exception as e:
