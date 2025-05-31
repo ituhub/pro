@@ -307,9 +307,9 @@ st.sidebar.header("⚙️ Settings")
 
 market_type = st.sidebar.selectbox("Market Type", ["Stocks", "Forex", "Commodities"])
 trained_tickers = {
-    "Stocks": [],
+    "Stocks": ["^GDAXI", "^HSI"],
     "Forex": [],
-    "Commodities": ["CC=F"]
+    "Commodities": ["CC=F", "KC=F", "NG=F", "GC=F"]
 }
 
 tickers = st.sidebar.multiselect(
