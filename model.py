@@ -929,7 +929,7 @@ def explain_predictions(model, X_sample, feature_names):
 # Main script logic (example, safe and clean, under __main__)
 # --------------------------------------------------------------------------------
 if __name__ == "__main__":
-    tickers = ["CC=F"]
+    tickers = ["CC=F", "KC=F", "NG=F", "GC=F", "^GDAXI", "^HSI"]
     data = fetch_live_data(tickers)
     for ticker in tickers:
         df = data.get(ticker, pd.DataFrame())
